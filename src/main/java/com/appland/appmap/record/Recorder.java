@@ -1,22 +1,20 @@
 package com.appland.appmap.record;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.Paths;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
-
 import com.appland.appmap.output.v1.CodeObject;
 import com.appland.appmap.output.v1.Event;
 import com.appland.appmap.record.IRecordingSession.Metadata;
 import com.appland.appmap.util.Logger;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Stack;
 
 /**
  * Recorder is a singleton responsible for managing recording sessions and routing events to any
- * active session. It also maintains a code object tree containing every known package/class/method.
+ * active session. It also maintains a code object tree containing every known
+ * package/class/method.
  */
 public class Recorder {
   private static final String ERROR_SESSION_PRESENT = "an active recording session already exists";
@@ -25,6 +23,7 @@ public class Recorder {
   private IRecordingSession activeSession = null;
   private CodeObjectTree globalCodeObjects = new CodeObjectTree();
   private Map<Long, Event> queuedEvents = new HashMap<Long, Event>();
+  private Stack<Event> callStack = new Stack<>();
 
   private static Recorder instance = new Recorder();
 
@@ -138,6 +137,20 @@ public class Recorder {
 
       recordingSession = this.activeSession;
       pendingEvent = this.queuedEvents.get(event.threadId);
+
+      if (event.isReturnEvent()) {
+        Event lastEventInStack = callStack.peek();
+        if (lastEventInStack.isSameCodeAs(event)) {
+          callStack.pop();
+          event.setParentId(lastEventInStack.id);
+          event.removeUnnecessaryInfoForReturnEvents();
+        } else {
+          callStack.push(event);
+        }
+      } else {
+        callStack.push(event);
+      }
+
       this.queuedEvents.put(event.threadId, event);
     }
 
@@ -205,7 +218,7 @@ public class Recorder {
   public CodeObjectTree getRegisteredObjects() {
     return this.globalCodeObjects;
   }
-  
+
   /**
    * Retrieve the last event recorded.
    */
